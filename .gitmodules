@@ -1,0 +1,3 @@
+[submodule "workspace/.skill_sources/intern_agent_skills"]
+	path = workspace/.skill_sources/intern_agent_skills
+	url = git@codeup.aliyun.com:finalsystems/chlxydl/intern_agent_skills.git
