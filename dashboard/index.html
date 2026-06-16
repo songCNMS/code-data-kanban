@@ -72,6 +72,99 @@
       align-items: center;
     }
 
+    .repo-stats {
+      border-top: 1px solid var(--line-soft);
+      padding: 12px 22px 14px;
+    }
+
+    .repo-stats-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+
+    .repo-stats-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .repo-stats-meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .repo-stats-total {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .repo-stats-total .value {
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .repo-stats-total .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .repo-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .repo-stat {
+      min-height: 68px;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      background: var(--panel-2);
+      padding: 9px 10px;
+      min-width: 0;
+    }
+
+    .repo-stat .label {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .repo-stat .value {
+      margin-top: 6px;
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .repo-stat .note {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .repo-stat.succeeded { border-color: #bfe5d2; background: #f1fbf6; }
+    .repo-stat.pending { border-color: #f0d19a; background: #fff9ed; }
+    .repo-stat.error { border-color: #f2caca; background: #fff5f5; }
+
+    .repo-stats-error {
+      margin-top: 8px;
+      color: var(--red);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
     input, select, button {
       height: 36px;
       border: 1px solid var(--line);
@@ -365,13 +458,17 @@
       .controls { grid-template-columns: 1fr 1fr; }
       .segmented { grid-column: 1 / -1; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .repo-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .right { order: -1; }
     }
 
     @media (max-width: 640px) {
-      .topbar, .controls, main { padding-left: 12px; padding-right: 12px; }
+      .topbar, .controls, .repo-stats, main { padding-left: 12px; padding-right: 12px; }
       .controls { grid-template-columns: 1fr; }
       .metrics { grid-template-columns: 1fr; }
+      .repo-stats-head { grid-template-columns: 1fr; }
+      .repo-stats-total { text-align: left; }
+      .repo-stats-grid { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -395,6 +492,20 @@
       <select id="ownerFilter"></select>
       <button id="resetButton" type="button">Reset</button>
     </div>
+    <section class="repo-stats" id="repoStats" aria-label="Repository collection statistics">
+      <div class="repo-stats-head">
+        <div>
+          <h2 class="repo-stats-title">Repository Collection</h2>
+          <div class="repo-stats-meta" id="repoStatsMeta">Loading repository stats</div>
+        </div>
+        <div class="repo-stats-total">
+          <div class="value" id="repoStatsTotal">-</div>
+          <div class="label">repos collected</div>
+        </div>
+      </div>
+      <div class="repo-stats-grid" id="repoStatsGrid"></div>
+      <div class="repo-stats-error hidden" id="repoStatsError"></div>
+    </section>
   </header>
 
   <main>
@@ -501,6 +612,102 @@
         .map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
         .join("");
       select.value = current;
+    }
+
+    function formatCount(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return "-";
+      return new Intl.NumberFormat("en-US").format(number);
+    }
+
+    function formatDateTime(value) {
+      if (!value) return null;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function renderRepoStatCell(label, value, note, className = "") {
+      return `
+        <div class="repo-stat ${className}">
+          <div class="label">${escapeHtml(label)}</div>
+          <div class="value">${escapeHtml(formatCount(value))}</div>
+          <div class="note">${escapeHtml(note)}</div>
+        </div>
+      `;
+    }
+
+    function renderRepoStats(payload) {
+      const total = payload?.totalRepos;
+      const succeeded = payload?.succeeded || {};
+      const nonSucceeded = payload?.nonSucceeded || {};
+      const buckets = Array.isArray(succeeded.starBuckets) ? succeeded.starBuckets : [];
+      const statuses = Array.isArray(nonSucceeded.statuses) ? nonSucceeded.statuses : [];
+      const queriedAt = formatDateTime(payload?.queriedAt);
+      const attemptAt = formatDateTime(payload?.lastAttemptAt);
+      const intervalHours = Math.round((payload?.refreshIntervalSeconds || 43200) / 3600);
+      const metaParts = [];
+      if (queriedAt) metaParts.push(`Refreshed ${queriedAt}`);
+      else if (attemptAt) metaParts.push(`Refresh attempted ${attemptAt}`);
+      else metaParts.push("Waiting for first refresh");
+      metaParts.push(`Every ${intervalHours} hours`);
+
+      document.getElementById("repoStatsMeta").textContent = metaParts.join(" · ");
+      document.getElementById("repoStatsTotal").textContent = formatCount(total);
+
+      const cells = [
+        renderRepoStatCell("succeeded", succeeded.total, "all succeeded repos", "succeeded"),
+        ...buckets.map(bucket => renderRepoStatCell(`stars ${bucket.label}`, bucket.count, "succeeded only", "succeeded")),
+        renderRepoStatCell("non-succeeded", nonSucceeded.total, "grouped by status", "pending"),
+        ...statuses.map(item => {
+          const status = item.status || "unknown";
+          const className = status === "failed" ? "error" : "pending";
+          return renderRepoStatCell(`status: ${status}`, item.count, "not star-bucketed", className);
+        })
+      ];
+      document.getElementById("repoStatsGrid").innerHTML = cells.join("");
+
+      const error = document.getElementById("repoStatsError");
+      if (payload?.lastError) {
+        error.textContent = `Last refresh error: ${payload.lastError}`;
+        error.classList.remove("hidden");
+      } else {
+        error.textContent = "";
+        error.classList.add("hidden");
+      }
+    }
+
+    function renderRepoStatsUnavailable(message) {
+      document.getElementById("repoStatsMeta").textContent = message;
+      document.getElementById("repoStatsTotal").textContent = "-";
+      document.getElementById("repoStatsGrid").innerHTML = [
+        renderRepoStatCell("succeeded", null, "all succeeded repos", "succeeded"),
+        renderRepoStatCell("stars [0, 5)", null, "succeeded only", "succeeded"),
+        renderRepoStatCell("stars [5, 10)", null, "succeeded only", "succeeded"),
+        renderRepoStatCell("stars >= 10", null, "succeeded only", "succeeded"),
+        renderRepoStatCell("stars unknown", null, "succeeded only", "succeeded"),
+        renderRepoStatCell("non-succeeded", null, "grouped by status", "pending")
+      ].join("");
+    }
+
+    async function loadRepoStats() {
+      if (window.location.protocol === "file:") {
+        renderRepoStatsUnavailable("Repo stats available from the dashboard service");
+        return;
+      }
+      try {
+        const response = await fetch("/repo-stats.json", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        renderRepoStats(await response.json());
+      } catch (err) {
+        renderRepoStatsUnavailable(`Repo stats unavailable: ${err.message}`);
+      }
     }
 
     function filteredTasks() {
@@ -760,6 +967,8 @@
       document.getElementById("viewTimeline").addEventListener("click", () => setView("timeline"));
       document.getElementById("viewBoard").addEventListener("click", () => setView("board"));
       document.getElementById("viewOwners").addEventListener("click", () => setView("owners"));
+      loadRepoStats();
+      window.setInterval(loadRepoStats, 5 * 60 * 1000);
       render();
     }
 
