@@ -6,3 +6,4 @@ dashboard/*.log
 dashboard/*.pid
 dashboard/*.tmp
 dashboard/sync-state.json
+dashboard/repo-stats.json

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+import base64
 import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 import time
 import urllib.error
@@ -16,9 +19,77 @@ ROOT = Path(__file__).resolve().parent
 RULE_PATH = ROOT / "sync-rule.json"
 DATA_PATH = ROOT / "dashboard-data.js"
 STATE_PATH = ROOT / "sync-state.json"
+REPO_STATS_PATH = ROOT / "repo-stats.json"
 TOKEN_PATH = Path.home() / ".feishu_skill_token.json"
 KEY_PATH = Path("/work-agents/key.txt")
 OPEN_API = "https://open.feishu.cn/open-apis"
+REPO_STATS_REFRESH_SECONDS = int(os.environ.get("REPO_STATS_REFRESH_SECONDS", str(12 * 60 * 60)))
+REPO_STATS_RETRY_SECONDS = int(os.environ.get("REPO_STATS_RETRY_SECONDS", "900"))
+REPO_STATS_AWS_REGION = os.environ.get("REPO_STATS_AWS_REGION", "us-east-1")
+REPO_STATS_ECS_CLUSTER = os.environ.get("REPO_STATS_ECS_CLUSTER", "fetch-gh-data-1")
+REPO_STATS_ECS_SERVICE = os.environ.get("REPO_STATS_ECS_SERVICE", "api")
+REPO_STATS_ECS_CONTAINER = os.environ.get("REPO_STATS_ECS_CONTAINER", "api")
+REPO_STATS_QUERY_TIMEOUT_SECONDS = int(os.environ.get("REPO_STATS_QUERY_TIMEOUT_SECONDS", "900"))
+REPO_STATS_B64_START = "__REPO_STATS_JSON_B64_START__"
+REPO_STATS_B64_END = "__REPO_STATS_JSON_B64_END__"
+
+REPO_STATS_SQL = """
+WITH snapshot AS (
+  SELECT
+    count(*) AS total_repos,
+    count(*) FILTER (WHERE status = 'succeeded') AS succeeded_total,
+    count(*) FILTER (WHERE status = 'succeeded' AND star_count IS NOT NULL AND star_count < 5) AS succeeded_stars_0_5,
+    count(*) FILTER (WHERE status = 'succeeded' AND star_count >= 5 AND star_count < 10) AS succeeded_stars_5_10,
+    count(*) FILTER (WHERE status = 'succeeded' AND star_count >= 10) AS succeeded_stars_gte_10,
+    count(*) FILTER (WHERE status = 'succeeded' AND star_count IS NULL) AS succeeded_stars_unknown,
+    count(*) FILTER (WHERE status IS DISTINCT FROM 'succeeded') AS non_succeeded_total
+  FROM repos
+),
+non_succeeded_statuses AS (
+  SELECT
+    coalesce(status, 'unknown') AS status,
+    count(*) AS repo_count
+  FROM repos
+  WHERE status IS DISTINCT FROM 'succeeded'
+  GROUP BY coalesce(status, 'unknown')
+),
+payload AS (
+  SELECT jsonb_build_object(
+    'queriedAt', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'totalRepos', snapshot.total_repos,
+    'succeeded', jsonb_build_object(
+      'total', snapshot.succeeded_total,
+      'starBuckets', jsonb_build_array(
+        jsonb_build_object('key', 'stars_0_5', 'label', '[0, 5)', 'count', snapshot.succeeded_stars_0_5),
+        jsonb_build_object('key', 'stars_5_10', 'label', '[5, 10)', 'count', snapshot.succeeded_stars_5_10),
+        jsonb_build_object('key', 'stars_gte_10', 'label', '>= 10', 'count', snapshot.succeeded_stars_gte_10),
+        jsonb_build_object('key', 'stars_unknown', 'label', 'unknown', 'count', snapshot.succeeded_stars_unknown)
+      )
+    ),
+    'nonSucceeded', jsonb_build_object(
+      'total', snapshot.non_succeeded_total,
+      'statuses', (
+        SELECT coalesce(
+          jsonb_agg(
+            jsonb_build_object('status', status, 'count', repo_count)
+            ORDER BY repo_count DESC, status
+          ),
+          '[]'::jsonb
+        )
+        FROM non_succeeded_statuses
+      )
+    )
+  )::text AS body
+  FROM snapshot
+)
+SELECT regexp_replace(
+  encode(convert_to(body, 'UTF8'), 'base64'),
+  '[[:space:]]+',
+  '',
+  'g'
+)
+FROM payload;
+""".strip()
 
 state = {
     "revision": None,
@@ -27,6 +98,15 @@ state = {
     "last_error": None,
 }
 condition = Condition()
+
+repo_stats_state = {
+    "updated_at": None,
+    "last_attempt_at": None,
+    "last_error": None,
+    "version": 0,
+    "refresh_interval_seconds": REPO_STATS_REFRESH_SECONDS,
+}
+repo_stats_condition = Condition()
 
 
 def read_cached_metadata():
@@ -50,6 +130,161 @@ def write_json(path, payload):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     tmp.replace(path)
+
+
+def utc_now_string():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def empty_repo_stats_payload():
+    return {
+        "queriedAt": None,
+        "generatedAt": None,
+        "totalRepos": None,
+        "succeeded": {
+            "total": None,
+            "starBuckets": [
+                {"key": "stars_0_5", "label": "[0, 5)", "count": None},
+                {"key": "stars_5_10", "label": "[5, 10)", "count": None},
+                {"key": "stars_gte_10", "label": ">= 10", "count": None},
+                {"key": "stars_unknown", "label": "unknown", "count": None},
+            ],
+        },
+        "nonSucceeded": {
+            "total": None,
+            "statuses": [],
+        },
+        "refreshIntervalSeconds": REPO_STATS_REFRESH_SECONDS,
+        "lastAttemptAt": repo_stats_state["last_attempt_at"],
+        "lastError": repo_stats_state["last_error"],
+        "loading": True,
+    }
+
+
+def read_cached_repo_stats():
+    if not REPO_STATS_PATH.exists():
+        return None
+    payload = read_json(REPO_STATS_PATH)
+    payload["refreshIntervalSeconds"] = REPO_STATS_REFRESH_SECONDS
+    payload["lastAttemptAt"] = repo_stats_state["last_attempt_at"]
+    payload["lastError"] = repo_stats_state["last_error"]
+    payload["loading"] = False
+    return payload
+
+
+def update_repo_stats_state(**changes):
+    with repo_stats_condition:
+        repo_stats_state.update(changes)
+        repo_stats_state["version"] += 1
+        repo_stats_condition.notify_all()
+
+
+def run_checked(args, timeout, combine_output=False):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"command failed ({result.returncode}): {' '.join(args[:4])}; {detail[:1200]}")
+    if combine_output:
+        return "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return result.stdout
+
+
+def current_ecs_task_arn():
+    output = run_checked([
+        "aws", "ecs", "list-tasks",
+        "--region", REPO_STATS_AWS_REGION,
+        "--cluster", REPO_STATS_ECS_CLUSTER,
+        "--service-name", REPO_STATS_ECS_SERVICE,
+        "--desired-status", "RUNNING",
+        "--query", "taskArns[0]",
+        "--output", "text",
+    ], timeout=45).strip()
+    if not output or output == "None":
+        raise RuntimeError(
+            f"no running ECS task found for {REPO_STATS_ECS_CLUSTER}/{REPO_STATS_ECS_SERVICE}"
+        )
+    return output
+
+
+def extract_json_payload(text):
+    marker = re.search(
+        rf"{REPO_STATS_B64_START}\s*([A-Za-z0-9+/=\s]+?)\s*{REPO_STATS_B64_END}",
+        text,
+        re.S,
+    )
+    if marker:
+        encoded = re.sub(r"\s+", "", marker.group(1))
+        decoded = base64.b64decode(encoded).decode()
+        return json.loads(decoded)
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char not in "{[":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(text[index:])
+            return payload
+        except json.JSONDecodeError:
+            continue
+    raise RuntimeError(f"repo stats query did not return JSON: {text[:1200]}")
+
+
+def ecs_psql_json(sql):
+    encoded_sql = base64.b64encode(sql.encode()).decode()
+    script = (
+        f"set -e; SQL=$(printf %s {encoded_sql} | base64 -d); "
+        'payload=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -X -q -t -A -c "$SQL"); '
+        f"printf '\\n{REPO_STATS_B64_START}\\n%s\\n{REPO_STATS_B64_END}\\n' \"$payload\""
+    )
+    output = run_checked([
+        "aws", "ecs", "execute-command",
+        "--region", REPO_STATS_AWS_REGION,
+        "--cluster", REPO_STATS_ECS_CLUSTER,
+        "--task", current_ecs_task_arn(),
+        "--container", REPO_STATS_ECS_CONTAINER,
+        "--interactive",
+        "--command", f"bash -lc {shlex.quote(script)}",
+    ], timeout=REPO_STATS_QUERY_TIMEOUT_SECONDS, combine_output=True)
+    return extract_json_payload(output)
+
+
+def refresh_repo_stats():
+    attempted_at = utc_now_string()
+    update_repo_stats_state(last_attempt_at=attempted_at)
+    payload = ecs_psql_json(REPO_STATS_SQL)
+    payload["generatedAt"] = attempted_at
+    payload["refreshIntervalSeconds"] = REPO_STATS_REFRESH_SECONDS
+    payload["source"] = {
+        "awsRegion": REPO_STATS_AWS_REGION,
+        "ecsCluster": REPO_STATS_ECS_CLUSTER,
+        "ecsService": REPO_STATS_ECS_SERVICE,
+        "ecsContainer": REPO_STATS_ECS_CONTAINER,
+        "database": "fetch_db",
+    }
+    write_json(REPO_STATS_PATH, payload)
+    update_repo_stats_state(
+        updated_at=payload.get("queriedAt") or attempted_at,
+        last_error=None,
+    )
+    return payload
+
+
+def repo_stats_loop():
+    cached = read_cached_repo_stats()
+    if cached:
+        update_repo_stats_state(updated_at=cached.get("queriedAt") or cached.get("generatedAt"))
+    while True:
+        started = time.monotonic()
+        try:
+            payload = refresh_repo_stats()
+            print(f"[repo-stats] updated_at={payload.get('queriedAt')} total={payload.get('totalRepos')}", flush=True)
+            delay = REPO_STATS_REFRESH_SECONDS
+        except Exception as exc:
+            update_repo_stats_state(last_error=str(exc))
+            print(f"[repo-stats:error] {exc}", file=sys.stderr, flush=True)
+            delay = min(REPO_STATS_RETRY_SECONDS, REPO_STATS_REFRESH_SECONDS)
+        elapsed = time.monotonic() - started
+        time.sleep(max(60, int(delay - elapsed)))
 
 
 def request_json(url, method="GET", token=None, body=None):
@@ -269,13 +504,23 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path == "/health":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps(state, ensure_ascii=False).encode())
+            payload = dict(state)
+            payload["repo_stats"] = dict(repo_stats_state)
+            self.wfile.write(json.dumps(payload, ensure_ascii=False).encode())
             return
-        if self.path == "/events":
+        if path == "/repo-stats.json":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            payload = read_cached_repo_stats() or empty_repo_stats_payload()
+            self.wfile.write(json.dumps(payload, ensure_ascii=False).encode())
+            return
+        if path == "/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
@@ -320,6 +565,7 @@ def main():
             state["version"] += 1
         print(f"[sync:error] initial refresh failed; serving cached dashboard data: {exc}", file=sys.stderr, flush=True)
     Thread(target=poll_loop, daemon=True).start()
+    Thread(target=repo_stats_loop, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"[server] http://0.0.0.0:{port}", flush=True)
     server.serve_forever()
