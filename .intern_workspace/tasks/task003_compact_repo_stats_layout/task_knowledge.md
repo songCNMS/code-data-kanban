@@ -1,4 +1,4 @@
-<!-- METADATA:SESSION=0 -->
+<!-- METADATA:SESSION=1 -->
 
 # Task Knowledge
 
@@ -6,3 +6,4 @@
 - Repository stats are currently rendered by `renderRepoStats` and `renderCephfsRepoStats`.
 - The two stats sections are inside the sticky `header`, which makes them occupy page space while scrolling.
 - Layout fix keeps `header` sticky for top controls only; `repo-stats-area` now sits below header as a normal, scrollable page section.
+- PR #4 merge state checked as `CLEAN`; merge requires an explicit approval such as `merge PR #4`.
