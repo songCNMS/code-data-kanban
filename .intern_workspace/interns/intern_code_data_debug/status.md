@@ -1,14 +1,14 @@
 # intern_code_data_debug - 状态
 
-<!-- METADATA:STATUS=Working,TASK=task003_compact_repo_stats_layout,ROLE=independent,TEAM_ID= -->
+<!-- METADATA:STATUS=Idle,TASK=,ROLE=independent,TEAM_ID= -->
 
 | 字段 | 值 |
 |------|-----|
 | Name | intern_code_data_debug |
-| Status | Working |
+| Status | Idle |
 | Role | independent |
 | Team | N/A |
-| Current Task | task003_compact_repo_stats_layout |
-| PR | https://github.com/songCNMS/code-data-kanban/pull/4 |
-| Session | 1 |
-| Recent Progress | Re-verified PR #4 is clean and dashboard endpoints return 200; awaiting explicit merge approval. |
+| Current Task |  |
+| PR | N/A |
+| Session | 2 |
+| Recent Progress | PR #4 approved for merge; task003 metadata closed and dashboard restarted from main. |

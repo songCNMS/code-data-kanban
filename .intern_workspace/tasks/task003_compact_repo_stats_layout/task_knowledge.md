@@ -1,4 +1,4 @@
-<!-- METADATA:SESSION=1 -->
+<!-- METADATA:SESSION=2 -->
 
 # Task Knowledge
 
@@ -7,3 +7,4 @@
 - The two stats sections are inside the sticky `header`, which makes them occupy page space while scrolling.
 - Layout fix keeps `header` sticky for top controls only; `repo-stats-area` now sits below header as a normal, scrollable page section.
 - PR #4 merge state checked as `CLEAN`; merge requires an explicit approval such as `merge PR #4`.
+- After merge, restart `code_data_kanban_dashboard` from `main` so the running service loads the non-sticky stats layout.
