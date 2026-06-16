@@ -1,4 +1,4 @@
-<!-- METADATA:STATUS=Open,ASSIGNEE= -->
+<!-- METADATA:STATUS=Completed,ASSIGNEE=intern_code_data_debug -->
 
 # task002_cephfs_repo_stats_dashboard
 
@@ -24,3 +24,11 @@ Add CephFS repository collection statistics to the kanban dashboard.
 
 - The compacted parquet `meta` dataset contains `stargazer_count`.
 - The compacted parquet `manifest` dataset contains archive `status` and `meta_row_count`.
+
+## PR
+
+- https://github.com/songCNMS/code-data-kanban/pull/3
+
+## Completion
+
+- Completed and approved for merge on 2026-06-16.

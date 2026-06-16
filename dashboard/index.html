@@ -506,6 +506,20 @@
       <div class="repo-stats-grid" id="repoStatsGrid"></div>
       <div class="repo-stats-error hidden" id="repoStatsError"></div>
     </section>
+    <section class="repo-stats" id="cephfsRepoStats" aria-label="CEPHFS repository collection statistics">
+      <div class="repo-stats-head">
+        <div>
+          <h2 class="repo-stats-title">CEPHFS Repository Collection</h2>
+          <div class="repo-stats-meta" id="cephfsRepoStatsMeta">Loading CephFS repository stats</div>
+        </div>
+        <div class="repo-stats-total">
+          <div class="value" id="cephfsRepoStatsTotal">-</div>
+          <div class="label">repos collected</div>
+        </div>
+      </div>
+      <div class="repo-stats-grid" id="cephfsRepoStatsGrid"></div>
+      <div class="repo-stats-error hidden" id="cephfsRepoStatsError"></div>
+    </section>
   </header>
 
   <main>
@@ -707,6 +721,72 @@
         renderRepoStats(await response.json());
       } catch (err) {
         renderRepoStatsUnavailable(`Repo stats unavailable: ${err.message}`);
+      }
+    }
+
+    function renderCephfsRepoStats(payload) {
+      const buckets = Array.isArray(payload?.starBuckets) ? payload.starBuckets : [];
+      const archiveStatus = payload?.archiveStatus || {};
+      const statuses = Array.isArray(archiveStatus.statuses) ? archiveStatus.statuses : [];
+      const queriedAt = formatDateTime(payload?.queriedAt);
+      const attemptAt = formatDateTime(payload?.lastAttemptAt);
+      const intervalHours = Math.round((payload?.refreshIntervalSeconds || 43200) / 3600);
+      const metaParts = [];
+      if (queriedAt) metaParts.push(`Refreshed ${queriedAt}`);
+      else if (attemptAt) metaParts.push(`Refresh attempted ${attemptAt}`);
+      else metaParts.push("Waiting for first refresh");
+      metaParts.push(`Every ${intervalHours} hours`);
+
+      document.getElementById("cephfsRepoStatsMeta").textContent = metaParts.join(" · ");
+      document.getElementById("cephfsRepoStatsTotal").textContent = formatCount(payload?.totalRepos);
+
+      const cells = [
+        renderRepoStatCell("status ok repos", payload?.totalRepos, "star-bucketed repos", "succeeded"),
+        ...buckets.map(bucket => renderRepoStatCell(`stars ${bucket.label}`, bucket.count, "status ok only", "succeeded")),
+        renderRepoStatCell("meta rows", payload?.metaRows, "compacted meta", ""),
+        renderRepoStatCell("archive rows", archiveStatus.total, "manifest entries", "pending"),
+        ...statuses.map(item => {
+          const status = item.status || "unknown";
+          const className = status === "ok" ? "succeeded" : "error";
+          return renderRepoStatCell(`status: ${status}`, item.count, `${formatCount(item.metaRows)} meta rows`, className);
+        })
+      ];
+      document.getElementById("cephfsRepoStatsGrid").innerHTML = cells.join("");
+
+      const error = document.getElementById("cephfsRepoStatsError");
+      if (payload?.lastError) {
+        error.textContent = `Last refresh error: ${payload.lastError}`;
+        error.classList.remove("hidden");
+      } else {
+        error.textContent = "";
+        error.classList.add("hidden");
+      }
+    }
+
+    function renderCephfsRepoStatsUnavailable(message) {
+      document.getElementById("cephfsRepoStatsMeta").textContent = message;
+      document.getElementById("cephfsRepoStatsTotal").textContent = "-";
+      document.getElementById("cephfsRepoStatsGrid").innerHTML = [
+        renderRepoStatCell("status ok repos", null, "star-bucketed repos", "succeeded"),
+        renderRepoStatCell("stars [0, 5)", null, "status ok only", "succeeded"),
+        renderRepoStatCell("stars [5, 10)", null, "status ok only", "succeeded"),
+        renderRepoStatCell("stars >= 10", null, "status ok only", "succeeded"),
+        renderRepoStatCell("stars unknown", null, "status ok only", "succeeded"),
+        renderRepoStatCell("archive rows", null, "manifest entries", "pending")
+      ].join("");
+    }
+
+    async function loadCephfsRepoStats() {
+      if (window.location.protocol === "file:") {
+        renderCephfsRepoStatsUnavailable("CephFS repo stats available from the dashboard service");
+        return;
+      }
+      try {
+        const response = await fetch("/cephfs-repo-stats.json", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        renderCephfsRepoStats(await response.json());
+      } catch (err) {
+        renderCephfsRepoStatsUnavailable(`CephFS repo stats unavailable: ${err.message}`);
       }
     }
 
@@ -968,7 +1048,9 @@
       document.getElementById("viewBoard").addEventListener("click", () => setView("board"));
       document.getElementById("viewOwners").addEventListener("click", () => setView("owners"));
       loadRepoStats();
+      loadCephfsRepoStats();
       window.setInterval(loadRepoStats, 5 * 60 * 1000);
+      window.setInterval(loadCephfsRepoStats, 5 * 60 * 1000);
       render();
     }
 

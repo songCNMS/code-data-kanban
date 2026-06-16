@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import date, datetime, timezone, timedelta
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -20,6 +21,7 @@ RULE_PATH = ROOT / "sync-rule.json"
 DATA_PATH = ROOT / "dashboard-data.js"
 STATE_PATH = ROOT / "sync-state.json"
 REPO_STATS_PATH = ROOT / "repo-stats.json"
+CEPHFS_REPO_STATS_PATH = ROOT / "cephfs-repo-stats.json"
 TOKEN_PATH = Path.home() / ".feishu_skill_token.json"
 KEY_PATH = Path("/work-agents/key.txt")
 OPEN_API = "https://open.feishu.cn/open-apis"
@@ -32,6 +34,10 @@ REPO_STATS_ECS_CONTAINER = os.environ.get("REPO_STATS_ECS_CONTAINER", "api")
 REPO_STATS_QUERY_TIMEOUT_SECONDS = int(os.environ.get("REPO_STATS_QUERY_TIMEOUT_SECONDS", "900"))
 REPO_STATS_B64_START = "__REPO_STATS_JSON_B64_START__"
 REPO_STATS_B64_END = "__REPO_STATS_JSON_B64_END__"
+CEPHFS_REPO_STATS_ROOT = Path(os.environ.get(
+    "CEPHFS_REPO_STATS_ROOT",
+    "/mnt/cephfs/data/processing/github_dl_parquet_compacted",
+))
 
 REPO_STATS_SQL = """
 WITH snapshot AS (
@@ -108,6 +114,15 @@ repo_stats_state = {
 }
 repo_stats_condition = Condition()
 
+cephfs_repo_stats_state = {
+    "updated_at": None,
+    "last_attempt_at": None,
+    "last_error": None,
+    "version": 0,
+    "refresh_interval_seconds": REPO_STATS_REFRESH_SECONDS,
+}
+cephfs_repo_stats_condition = Condition()
+
 
 def read_cached_metadata():
     if not DATA_PATH.exists():
@@ -161,6 +176,33 @@ def empty_repo_stats_payload():
     }
 
 
+def default_star_buckets():
+    return [
+        {"key": "stars_0_5", "label": "[0, 5)", "count": None},
+        {"key": "stars_5_10", "label": "[5, 10)", "count": None},
+        {"key": "stars_gte_10", "label": ">= 10", "count": None},
+        {"key": "stars_unknown", "label": "unknown", "count": None},
+    ]
+
+
+def empty_cephfs_repo_stats_payload():
+    return {
+        "queriedAt": None,
+        "generatedAt": None,
+        "totalRepos": None,
+        "starBuckets": default_star_buckets(),
+        "archiveStatus": {
+            "total": None,
+            "statuses": [],
+        },
+        "metaRows": None,
+        "refreshIntervalSeconds": REPO_STATS_REFRESH_SECONDS,
+        "lastAttemptAt": cephfs_repo_stats_state["last_attempt_at"],
+        "lastError": cephfs_repo_stats_state["last_error"],
+        "loading": True,
+    }
+
+
 def read_cached_repo_stats():
     if not REPO_STATS_PATH.exists():
         return None
@@ -172,11 +214,29 @@ def read_cached_repo_stats():
     return payload
 
 
+def read_cached_cephfs_repo_stats():
+    if not CEPHFS_REPO_STATS_PATH.exists():
+        return None
+    payload = read_json(CEPHFS_REPO_STATS_PATH)
+    payload["refreshIntervalSeconds"] = REPO_STATS_REFRESH_SECONDS
+    payload["lastAttemptAt"] = cephfs_repo_stats_state["last_attempt_at"]
+    payload["lastError"] = cephfs_repo_stats_state["last_error"]
+    payload["loading"] = False
+    return payload
+
+
 def update_repo_stats_state(**changes):
     with repo_stats_condition:
         repo_stats_state.update(changes)
         repo_stats_state["version"] += 1
         repo_stats_condition.notify_all()
+
+
+def update_cephfs_repo_stats_state(**changes):
+    with cephfs_repo_stats_condition:
+        cephfs_repo_stats_state.update(changes)
+        cephfs_repo_stats_state["version"] += 1
+        cephfs_repo_stats_condition.notify_all()
 
 
 def run_checked(args, timeout, combine_output=False):
@@ -269,20 +329,178 @@ def refresh_repo_stats():
     return payload
 
 
+def parquet_files_in(path):
+    if not path.exists():
+        raise RuntimeError(f"missing parquet directory: {path}")
+    files = []
+    with os.scandir(path) as entries:
+        for entry in entries:
+            if entry.is_file() and entry.name.endswith(".parquet"):
+                files.append(entry.path)
+    if not files:
+        raise RuntimeError(f"no parquet files found in {path}")
+    return files
+
+
+def add_bucket_counts(counts, stars):
+    import pyarrow.compute as pc
+
+    valid = pc.is_valid(stars)
+    counts["total"] += len(stars)
+    counts["stars_unknown"] += pc.sum(pc.invert(valid)).as_py() or 0
+    counts["stars_0_5"] += pc.sum(pc.and_(valid, pc.less(stars, 5))).as_py() or 0
+    counts["stars_5_10"] += pc.sum(pc.and_(pc.greater_equal(stars, 5), pc.less(stars, 10))).as_py() or 0
+    counts["stars_gte_10"] += pc.sum(pc.and_(valid, pc.greater_equal(stars, 10))).as_py() or 0
+
+
+def scan_star_buckets(dataset, row_filter=None):
+    counts = Counter({
+        "total": 0,
+        "stars_0_5": 0,
+        "stars_5_10": 0,
+        "stars_gte_10": 0,
+        "stars_unknown": 0,
+    })
+    for batch in dataset.to_batches(columns=["stargazer_count"], filter=row_filter, batch_size=262144):
+        add_bucket_counts(counts, batch.column(0))
+    return counts
+
+
+def star_buckets_from_counts(counts):
+    return [
+        {"key": "stars_0_5", "label": "[0, 5)", "count": int(counts["stars_0_5"])},
+        {"key": "stars_5_10", "label": "[5, 10)", "count": int(counts["stars_5_10"])},
+        {"key": "stars_gte_10", "label": ">= 10", "count": int(counts["stars_gte_10"])},
+        {"key": "stars_unknown", "label": "unknown", "count": int(counts["stars_unknown"])},
+    ]
+
+
+def collect_cephfs_repo_stats():
+    import pyarrow.dataset as ds
+
+    meta_path = CEPHFS_REPO_STATS_ROOT / "meta"
+    manifest_path = CEPHFS_REPO_STATS_ROOT / "manifest"
+    meta_files = parquet_files_in(meta_path)
+    manifest_files = parquet_files_in(manifest_path)
+
+    manifest = ds.dataset(manifest_files, format="parquet")
+    status_counts = Counter()
+    status_meta_rows = Counter()
+    error_with_meta = []
+    manifest_rows = 0
+    meta_row_count_sum = 0
+
+    for batch in manifest.to_batches(columns=["repo_full_name", "status", "meta_row_count"], batch_size=262144):
+        manifest_rows += batch.num_rows
+        names = batch.column(0).to_pylist()
+        statuses = batch.column(1).to_pylist()
+        meta_counts = batch.column(2).to_pylist()
+        for name, status, meta_count in zip(names, statuses, meta_counts):
+            status_key = status or "unknown"
+            row_meta_count = int(meta_count or 0)
+            status_counts[status_key] += 1
+            status_meta_rows[status_key] += row_meta_count
+            meta_row_count_sum += row_meta_count
+            if status_key != "ok" and row_meta_count > 0 and name:
+                error_with_meta.append(name)
+
+    meta = ds.dataset(meta_files, format="parquet")
+    all_star_counts = scan_star_buckets(meta)
+    excluded_star_counts = Counter({
+        "total": 0,
+        "stars_0_5": 0,
+        "stars_5_10": 0,
+        "stars_gte_10": 0,
+        "stars_unknown": 0,
+    })
+    name_column = None
+    for candidate in ("canonical_full_name", "full_name", "repo_full_name"):
+        if candidate in meta.schema.names:
+            name_column = candidate
+            break
+    if error_with_meta and name_column:
+        excluded_filter = ds.field(name_column).isin(error_with_meta)
+        excluded_star_counts = scan_star_buckets(meta, row_filter=excluded_filter)
+
+    ok_star_counts = Counter()
+    for key in ("total", "stars_0_5", "stars_5_10", "stars_gte_10", "stars_unknown"):
+        ok_star_counts[key] = int(all_star_counts[key] - excluded_star_counts[key])
+
+    statuses = [
+        {
+            "status": status,
+            "count": int(count),
+            "metaRows": int(status_meta_rows[status]),
+        }
+        for status, count in status_counts.items()
+    ]
+    statuses.sort(key=lambda item: (-item["count"], item["status"]))
+
+    return {
+        "queriedAt": utc_now_string(),
+        "totalRepos": int(ok_star_counts["total"]),
+        "starBuckets": star_buckets_from_counts(ok_star_counts),
+        "archiveStatus": {
+            "total": int(manifest_rows),
+            "statuses": statuses,
+        },
+        "metaRows": int(all_star_counts["total"]),
+        "excludedMetaRows": int(excluded_star_counts["total"]),
+        "manifestMetaRows": int(meta_row_count_sum),
+        "source": {
+            "root": str(CEPHFS_REPO_STATS_ROOT),
+            "metaPath": str(meta_path),
+            "manifestPath": str(manifest_path),
+            "metaFiles": len(meta_files),
+            "manifestFiles": len(manifest_files),
+        },
+    }
+
+
+def refresh_cephfs_repo_stats():
+    attempted_at = utc_now_string()
+    update_cephfs_repo_stats_state(last_attempt_at=attempted_at)
+    payload = collect_cephfs_repo_stats()
+    payload["generatedAt"] = attempted_at
+    payload["refreshIntervalSeconds"] = REPO_STATS_REFRESH_SECONDS
+    write_json(CEPHFS_REPO_STATS_PATH, payload)
+    update_cephfs_repo_stats_state(
+        updated_at=payload.get("queriedAt") or attempted_at,
+        last_error=None,
+    )
+    return payload
+
+
 def repo_stats_loop():
     cached = read_cached_repo_stats()
     if cached:
         update_repo_stats_state(updated_at=cached.get("queriedAt") or cached.get("generatedAt"))
+    cephfs_cached = read_cached_cephfs_repo_stats()
+    if cephfs_cached:
+        update_cephfs_repo_stats_state(
+            updated_at=cephfs_cached.get("queriedAt") or cephfs_cached.get("generatedAt")
+        )
     while True:
         started = time.monotonic()
+        failed = False
         try:
             payload = refresh_repo_stats()
             print(f"[repo-stats] updated_at={payload.get('queriedAt')} total={payload.get('totalRepos')}", flush=True)
-            delay = REPO_STATS_REFRESH_SECONDS
         except Exception as exc:
+            failed = True
             update_repo_stats_state(last_error=str(exc))
             print(f"[repo-stats:error] {exc}", file=sys.stderr, flush=True)
-            delay = min(REPO_STATS_RETRY_SECONDS, REPO_STATS_REFRESH_SECONDS)
+        try:
+            payload = refresh_cephfs_repo_stats()
+            print(
+                f"[cephfs-repo-stats] updated_at={payload.get('queriedAt')} total={payload.get('totalRepos')}",
+                flush=True,
+            )
+        except Exception as exc:
+            failed = True
+            update_cephfs_repo_stats_state(last_error=str(exc))
+            print(f"[cephfs-repo-stats:error] {exc}", file=sys.stderr, flush=True)
+        delay = min(REPO_STATS_RETRY_SECONDS, REPO_STATS_REFRESH_SECONDS) if failed else REPO_STATS_REFRESH_SECONDS
         elapsed = time.monotonic() - started
         time.sleep(max(60, int(delay - elapsed)))
 
@@ -511,6 +729,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             payload = dict(state)
             payload["repo_stats"] = dict(repo_stats_state)
+            payload["cephfs_repo_stats"] = dict(cephfs_repo_stats_state)
             self.wfile.write(json.dumps(payload, ensure_ascii=False).encode())
             return
         if path == "/repo-stats.json":
@@ -518,6 +737,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
             payload = read_cached_repo_stats() or empty_repo_stats_payload()
+            self.wfile.write(json.dumps(payload, ensure_ascii=False).encode())
+            return
+        if path == "/cephfs-repo-stats.json":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            payload = read_cached_cephfs_repo_stats() or empty_cephfs_repo_stats_payload()
             self.wfile.write(json.dumps(payload, ensure_ascii=False).encode())
             return
         if path == "/events":

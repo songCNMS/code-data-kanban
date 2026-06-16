@@ -14,6 +14,7 @@ The server binds to `0.0.0.0:$PORT` and serves:
 - `/` - dashboard UI
 - `/dashboard-data.js` - current dashboard snapshot
 - `/repo-stats.json` - current repository collection statistics
+- `/cephfs-repo-stats.json` - current CephFS repository collection statistics
 - `/health` - sync state JSON
 - `/events` - server-sent events for live browser reloads
 
@@ -37,6 +38,12 @@ container's `$DATABASE_URL` for PostgreSQL access. The latest successful result
 is cached in `repo-stats.json`; the dashboard keeps serving cached stats if a
 later refresh fails.
 
+At the same interval, `server.py` refreshes CephFS repository collection
+statistics from compacted parquet metadata under
+`/mnt/cephfs/data/processing/github_dl_parquet_compacted`. It reads only the
+manifest and metadata parquet columns required for status and star buckets,
+then caches the latest successful result in `cephfs-repo-stats.json`.
+
 Environment overrides:
 
 - `REPO_STATS_REFRESH_SECONDS`
@@ -46,3 +53,4 @@ Environment overrides:
 - `REPO_STATS_ECS_SERVICE`
 - `REPO_STATS_ECS_CONTAINER`
 - `REPO_STATS_QUERY_TIMEOUT_SECONDS`
+- `CEPHFS_REPO_STATS_ROOT`
