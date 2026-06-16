@@ -1,14 +1,14 @@
 # intern_code_data_debug - 状态
 
-<!-- METADATA:STATUS=Idle,TASK=,ROLE=independent,TEAM_ID= -->
+<!-- METADATA:STATUS=Working,TASK=task003_compact_repo_stats_layout,ROLE=independent,TEAM_ID= -->
 
 | 字段 | 值 |
 |------|-----|
 | Name | intern_code_data_debug |
-| Status | Idle |
+| Status | Working |
 | Role | independent |
 | Team | N/A |
-| Current Task |  |
-| PR | N/A |
+| Current Task | task003_compact_repo_stats_layout |
+| PR | https://github.com/songCNMS/code-data-kanban/pull/4 |
 | Session | 1 |
-| Recent Progress | PR #3 approved for merge; task002 metadata closed and ready on main. |
+| Recent Progress | Started compact layout fix for repository collection sections on PR #4. |
