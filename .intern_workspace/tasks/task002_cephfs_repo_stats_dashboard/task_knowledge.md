@@ -1,4 +1,4 @@
-<!-- METADATA:SESSION=0 -->
+<!-- METADATA:SESSION=1 -->
 
 # Task Knowledge
 
@@ -7,3 +7,4 @@
 - Prior probe found compacted meta rows: 3,900,445; manifest rows: 3,900,514; `status=ok`: 3,900,369.
 - Verified at 2026-06-16T08:16:04Z: ok repos 3,900,369; stars `[0, 5)` 1,081,694; `[5, 10)` 352,273; `>= 10` 2,466,402; unknown 0.
 - Dashboard endpoint is `/cephfs-repo-stats.json`; runtime cache is ignored `dashboard/cephfs-repo-stats.json`.
+- PR #3 dashboard verification used `0.0.0.0:8522`; `/cephfs-repo-stats.json` returned HTTP 200 with compacted parquet totals.
