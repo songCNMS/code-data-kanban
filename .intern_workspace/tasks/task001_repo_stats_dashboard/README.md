@@ -1,4 +1,4 @@
-<!-- METADATA:STATUS=Open,ASSIGNEE= -->
+<!-- METADATA:STATUS=InProgress,ASSIGNEE=intern_code_data_debug -->
 
 # task001_repo_stats_dashboard
 
@@ -22,3 +22,7 @@ Add repository collection statistics to the kanban dashboard.
 
 - Query the Aurora PostgreSQL data source through ECS Exec and the container `$DATABASE_URL`.
 - Do not hardcode database credentials.
+
+## PR
+
+- https://github.com/songCNMS/code-data-kanban/pull/2
