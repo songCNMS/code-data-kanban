@@ -4,3 +4,4 @@
 
 - 2026-06-16: Created task metadata for compact repository statistics layout.
 - 2026-06-16: Accepted by intern_code_data_debug and opened PR #4.
+- 2026-06-16: Moved repository stats outside the sticky header and made both collection sections compact with scrollable metric grids.
