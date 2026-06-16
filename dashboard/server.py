@@ -585,7 +585,10 @@ def clean_task_name(value):
 
 
 def parse_date(value):
-    year, month, day = map(int, value.split("-"))
+    text = cell_text(value).strip()
+    if re.fullmatch(r"\d+(?:\.0+)?", text):
+        return date(1899, 12, 30) + timedelta(days=int(float(text)))
+    year, month, day = map(int, text.split("-"))
     return date(year, month, day)
 
 
@@ -602,12 +605,12 @@ def transform_sheet(sheet_data, revision):
         row = (row + [""] * 22)[:22]
         if not cell_text(row[1]).strip():
             continue
-        start = cell_text(row[4]).strip()
-        end = cell_text(row[5]).strip()
-        if not start or not end:
+        start_raw = row[4]
+        end_raw = row[5]
+        if not cell_text(start_raw).strip() or not cell_text(end_raw).strip():
             continue
-        d0 = parse_date(start)
-        d1 = parse_date(end)
+        d0 = parse_date(start_raw)
+        d1 = parse_date(end_raw)
         tasks.append({
             "id": f"T{index:02d}",
             "row": index + 5,
@@ -615,8 +618,8 @@ def transform_sheet(sheet_data, revision):
             "task": clean_task_name(row[1]),
             "owner": cell_text(row[2]).strip() or "TBD",
             "status": cell_text(row[3]).strip() or "待办",
-            "start": start,
-            "end": end,
+            "start": d0.isoformat(),
+            "end": d1.isoformat(),
             "notes": cell_text(row[6]).strip(),
             "weeks": [cell_text(item).strip() for item in row[7:22]],
             "durationDays": (d1 - d0).days + 1,
