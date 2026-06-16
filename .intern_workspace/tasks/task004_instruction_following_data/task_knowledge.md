@@ -4,4 +4,6 @@
 
 - Owner: 宋磊.
 - Current status: InProgress.
-- Detailed data scope, source location, and acceptance criteria have not yet been recorded in task metadata.
+- Concrete data scope: 待定.
+- Source paths: 待定.
+- Acceptance criteria: 10K级别的高质量数据.

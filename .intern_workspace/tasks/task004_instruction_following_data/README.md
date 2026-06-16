@@ -17,4 +17,6 @@ Track the instruction following data task.
 ## Requirements
 
 - Prepare and maintain instruction following data.
-- Record concrete scope, source paths, and validation criteria once confirmed by the owner.
+- Concrete data scope: 待定.
+- Source paths: 待定.
+- Acceptance criteria: 10K级别的高质量数据.
