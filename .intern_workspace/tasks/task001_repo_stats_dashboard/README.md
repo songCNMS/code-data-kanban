@@ -1,4 +1,4 @@
-<!-- METADATA:STATUS=InProgress,ASSIGNEE=intern_code_data_debug -->
+<!-- METADATA:STATUS=Completed,ASSIGNEE=intern_code_data_debug -->
 
 # task001_repo_stats_dashboard
 
@@ -26,3 +26,7 @@ Add repository collection statistics to the kanban dashboard.
 ## PR
 
 - https://github.com/songCNMS/code-data-kanban/pull/2
+
+## Completion
+
+- Completed and approved for merge on 2026-06-16.
