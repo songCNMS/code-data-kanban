@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code Data Dashboard</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --panel-2: #fbfcfd;
+      --text: #20242a;
+      --muted: #68717d;
+      --line: #d9dee5;
+      --line-soft: #e9edf2;
+      --blue: #2f6fed;
+      --green: #1f9d72;
+      --amber: #c77800;
+      --red: #c94040;
+      --purple: #8256d0;
+      --gray: #7a8490;
+      --shadow: 0 8px 28px rgba(26, 33, 43, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(12px);
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding: 16px 22px 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, 170px)) auto;
+      gap: 10px;
+      padding: 0 22px 14px;
+      align-items: center;
+    }
+
+    input, select, button {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+    }
+
+    input, select { padding: 0 10px; min-width: 0; }
+
+    button {
+      cursor: pointer;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+
+    .segmented {
+      display: inline-grid;
+      grid-auto-flow: column;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      height: 36px;
+      background: #fff;
+    }
+
+    .segmented button {
+      border: 0;
+      border-right: 1px solid var(--line);
+      border-radius: 0;
+      height: 34px;
+      background: transparent;
+    }
+
+    .segmented button:last-child { border-right: 0; }
+    .segmented button.active { background: #eaf1ff; color: #174ea6; font-weight: 650; }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 16px;
+      padding: 16px 22px 24px;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    .left, .right {
+      min-width: 0;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .count {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+      min-height: 78px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .metric .value {
+      font-size: 26px;
+      line-height: 1;
+      font-weight: 750;
+    }
+
+    .metric .note {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .timeline-wrap { overflow: auto; }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: 58px minmax(280px, 1.8fr) 112px 106px repeat(15, 54px);
+      min-width: 1370px;
+      font-size: 12px;
+    }
+
+    .cell {
+      min-height: 42px;
+      padding: 7px 8px;
+      border-right: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line-soft);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .timeline .head {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      min-height: 36px;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .timeline .week { justify-content: center; text-align: center; }
+    .timeline .row-id { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .task-name { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .task-line { display: grid; gap: 3px; min-width: 0; }
+    .task-meta { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .task-row:hover .cell { background: #f8fbff; }
+    .task-row.selected .cell { background: #eef5ff; }
+    .task-row { display: contents; cursor: pointer; }
+
+    .mark {
+      width: 100%;
+      height: 18px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 750;
+      color: #fff;
+      font-size: 11px;
+    }
+
+    .bar { background: var(--blue); }
+    .milestone { background: var(--green); border-radius: 50%; width: 18px; }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 64px;
+      max-width: 100%;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .s-active { color: #1656bf; background: #eaf1ff; border-color: #c9dafd; }
+    .s-wait { color: #8a5200; background: #fff4df; border-color: #f0d19a; }
+    .s-done { color: #147251; background: #e7f6ef; border-color: #bfe5d2; }
+    .s-blocked { color: #a12b2b; background: #fdecec; border-color: #f2caca; }
+    .s-next { color: #653ab1; background: #f1eafd; border-color: #d9c9f5; }
+    .s-todo { color: #59616b; background: #eff2f5; border-color: #d9dee5; }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(190px, 1fr));
+      gap: 10px;
+      overflow-x: auto;
+      padding: 12px;
+    }
+
+    .lane {
+      min-width: 190px;
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+    }
+
+    .lane-title {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .task-card {
+      margin: 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      padding: 9px;
+      cursor: pointer;
+    }
+
+    .task-card:hover { border-color: #b9c7dc; }
+
+    .owner-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .owner-row {
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: var(--panel-2);
+      padding: 10px;
+    }
+
+    .owner-name {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .loadbar {
+      height: 8px;
+      border-radius: 999px;
+      background: #e6eaf0;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+
+    .loadbar span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+      max-width: 100%;
+    }
+
+    .detail { padding: 14px; display: grid; gap: 12px; }
+    .detail h2 { margin: 0; font-size: 18px; line-height: 1.25; letter-spacing: 0; }
+    .detail-grid { display: grid; grid-template-columns: 92px 1fr; gap: 8px; }
+    .key { color: var(--muted); }
+    .value { min-width: 0; overflow-wrap: anywhere; }
+    .notes { padding: 10px; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 7px; }
+
+    .dep-section { display: grid; gap: 8px; }
+    .dep-list { display: grid; gap: 7px; }
+    .dep-item {
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      background: var(--panel-2);
+      padding: 8px;
+      cursor: pointer;
+    }
+
+    .dep-item:hover { border-color: #b9c7dc; }
+    .dep-title { font-weight: 650; }
+    .dep-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .empty { color: var(--muted); padding: 8px 0; }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 980px) {
+      .topbar, main { grid-template-columns: 1fr; }
+      .controls { grid-template-columns: 1fr 1fr; }
+      .segmented { grid-column: 1 / -1; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .right { order: -1; }
+    }
+
+    @media (max-width: 640px) {
+      .topbar, .controls, main { padding-left: 12px; padding-right: 12px; }
+      .controls { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>Code Data Dashboard</h1>
+        <div class="sub"><span id="syncLabel"></span> · <span id="liveLabel">Static</span> · <a id="sourceLink" target="_blank" rel="noreferrer">飞书表格</a></div>
+      </div>
+      <div class="segmented" aria-label="View">
+        <button id="viewTimeline" class="active" type="button">Timeline</button>
+        <button id="viewBoard" type="button">Board</button>
+        <button id="viewOwners" type="button">Owners</button>
+      </div>
+    </div>
+    <div class="controls">
+      <input id="searchInput" type="search" placeholder="Search task, owner, note">
+      <select id="stageFilter"></select>
+      <select id="statusFilter"></select>
+      <select id="ownerFilter"></select>
+      <button id="resetButton" type="button">Reset</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div class="metrics" id="metrics"></div>
+
+      <section class="panel" id="timelinePanel">
+        <div class="panel-header">
+          <h2 class="panel-title">Timeline</h2>
+          <span class="count" id="timelineCount"></span>
+        </div>
+        <div class="timeline-wrap">
+          <div class="timeline" id="timeline"></div>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="boardPanel">
+        <div class="panel-header">
+          <h2 class="panel-title">Board</h2>
+          <span class="count" id="boardCount"></span>
+        </div>
+        <div class="board" id="board"></div>
+      </section>
+
+      <section class="panel hidden" id="ownersPanel">
+        <div class="panel-header">
+          <h2 class="panel-title">Owners</h2>
+          <span class="count" id="ownersCount"></span>
+        </div>
+        <div class="owner-grid" id="owners"></div>
+      </section>
+    </section>
+
+    <aside class="right">
+      <section class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Task Detail</h2>
+          <span class="count" id="selectedId"></span>
+        </div>
+        <div class="detail" id="detail"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Dependencies</h2>
+          <span class="count" id="depCount"></span>
+        </div>
+        <div class="detail" id="dependencies"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="./dashboard-data.js"></script>
+  <script>
+    const data = window.DASHBOARD_DATA;
+    const tasks = data.tasks;
+    const taskById = new Map(tasks.map(task => [task.id, task]));
+    const state = {
+      view: "timeline",
+      search: "",
+      stage: "all",
+      status: "all",
+      owner: "all",
+      selected: tasks[0]?.id || null
+    };
+
+    const statusOrder = ["进行中", "等待确认", "等待上游", "阻塞", "待办", "已完成", "pass", "下版"];
+    const statusLabels = {
+      "进行中": "进行中",
+      "等待确认": "等待确认",
+      "等待上游": "等待上游",
+      "阻塞": "阻塞",
+      "待办": "待办",
+      "已完成": "已完成",
+      "pass": "pass",
+      "下版": "下版"
+    };
+
+    function statusClass(status) {
+      if (status === "进行中") return "s-active";
+      if (status === "等待确认" || status === "等待上游") return "s-wait";
+      if (status === "已完成" || status === "pass") return "s-done";
+      if (status === "阻塞") return "s-blocked";
+      if (status === "下版") return "s-next";
+      return "s-todo";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[ch]));
+    }
+
+    function unique(values) {
+      return [...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh-CN"));
+    }
+
+    function setOptions(select, label, values, current) {
+      select.innerHTML = `<option value="all">${label}</option>` + values
+        .map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+        .join("");
+      select.value = current;
+    }
+
+    function filteredTasks() {
+      const q = state.search.trim().toLowerCase();
+      return tasks.filter(task => {
+        if (state.stage !== "all" && task.stage !== state.stage) return false;
+        if (state.status !== "all" && task.status !== state.status) return false;
+        if (state.owner !== "all" && task.owner !== state.owner) return false;
+        if (!q) return true;
+        const haystack = `${task.task} ${task.owner} ${task.stage} ${task.status} ${task.notes}`.toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+
+    function successorsOf(taskId) {
+      return tasks.filter(task => task.dependencies.includes(taskId));
+    }
+
+    function renderFilters() {
+      setOptions(document.getElementById("stageFilter"), "All stages", unique(tasks.map(t => t.stage)), state.stage);
+      setOptions(document.getElementById("statusFilter"), "All status", unique(tasks.map(t => t.status)), state.status);
+      setOptions(document.getElementById("ownerFilter"), "All owners", unique(tasks.map(t => t.owner)), state.owner);
+    }
+
+    function renderMetrics(rows) {
+      const active = rows.filter(t => t.status === "进行中").length;
+      const waiting = rows.filter(t => t.status === "等待确认" || t.status === "等待上游").length;
+      const blocked = rows.filter(t => t.status === "阻塞").length;
+      const done = rows.filter(t => t.status === "已完成" || t.status === "pass").length;
+      const deps = rows.reduce((sum, task) => sum + task.dependencies.length, 0);
+      const metrics = [
+        ["Tasks", rows.length, `${done} done/pass`],
+        ["Active", active, `${waiting} waiting`],
+        ["Blocked", blocked, "needs upstream action"],
+        ["Owners", unique(rows.map(t => t.owner)).length, "assigned or TBD"],
+        ["Dependencies", deps, "in filtered scope"]
+      ];
+      document.getElementById("metrics").innerHTML = metrics.map(([label, value, note]) => `
+        <div class="metric">
+          <div class="label">${escapeHtml(label)}</div>
+          <div class="value">${escapeHtml(value)}</div>
+          <div class="note">${escapeHtml(note)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderTimeline(rows) {
+      const timeline = document.getElementById("timeline");
+      const header = [
+        `<div class="cell head">Row</div>`,
+        `<div class="cell head">Task</div>`,
+        `<div class="cell head">Owner</div>`,
+        `<div class="cell head">Status</div>`,
+        ...data.weekHeaders.map(week => `<div class="cell head week">${escapeHtml(week).replace("\\n", "<br>")}</div>`)
+      ].join("");
+
+      const body = rows.map(task => {
+        const selected = task.id === state.selected ? " selected" : "";
+        const weeks = task.weeks.map(mark => {
+          if (mark === "●") return `<div class="cell week"><span class="mark milestone">●</span></div>`;
+          if (mark) return `<div class="cell week"><span class="mark bar"></span></div>`;
+          return `<div class="cell week"></div>`;
+        }).join("");
+        return `
+          <div class="task-row${selected}" data-task-id="${escapeHtml(task.id)}">
+            <div class="cell row-id">${escapeHtml(task.row)}</div>
+            <div class="cell"><div class="task-line"><div class="task-name">${escapeHtml(task.task)}</div><div class="task-meta">${escapeHtml(task.start)} → ${escapeHtml(task.end)} · ${escapeHtml(task.stage)}</div></div></div>
+            <div class="cell">${escapeHtml(task.owner)}</div>
+            <div class="cell"><span class="status ${statusClass(task.status)}">${escapeHtml(statusLabels[task.status] || task.status)}</span></div>
+            ${weeks}
+          </div>
+        `;
+      }).join("");
+      timeline.innerHTML = header + body;
+      document.getElementById("timelineCount").textContent = `${rows.length} tasks`;
+      timeline.querySelectorAll(".task-row").forEach(row => {
+        row.addEventListener("click", () => selectTask(row.dataset.taskId));
+      });
+    }
+
+    function renderBoard(rows) {
+      const board = document.getElementById("board");
+      const grouped = new Map(statusOrder.map(status => [status, []]));
+      rows.forEach(task => {
+        if (!grouped.has(task.status)) grouped.set(task.status, []);
+        grouped.get(task.status).push(task);
+      });
+      board.innerHTML = [...grouped.entries()].filter(([, group]) => group.length || rows.length)
+        .map(([status, group]) => `
+          <section class="lane">
+            <div class="lane-title"><span>${escapeHtml(statusLabels[status] || status)}</span><span class="count">${group.length}</span></div>
+            ${group.map(task => `
+              <article class="task-card" data-task-id="${escapeHtml(task.id)}">
+                <div class="task-name">${escapeHtml(task.task)}</div>
+                <div class="task-meta">${escapeHtml(task.owner)} · ${escapeHtml(task.start)} → ${escapeHtml(task.end)}</div>
+              </article>
+            `).join("")}
+          </section>
+        `).join("");
+      document.getElementById("boardCount").textContent = `${rows.length} tasks`;
+      board.querySelectorAll(".task-card").forEach(card => {
+        card.addEventListener("click", () => selectTask(card.dataset.taskId));
+      });
+    }
+
+    function renderOwners(rows) {
+      const owners = document.getElementById("owners");
+      const grouped = new Map();
+      rows.forEach(task => {
+        if (!grouped.has(task.owner)) grouped.set(task.owner, []);
+        grouped.get(task.owner).push(task);
+      });
+      const maxLoad = Math.max(1, ...[...grouped.values()].map(group => group.reduce((sum, task) => sum + task.durationDays, 0)));
+      owners.innerHTML = [...grouped.entries()].sort((a, b) => b[1].length - a[1].length).map(([owner, group]) => {
+        const load = group.reduce((sum, task) => sum + task.durationDays, 0);
+        const active = group.filter(task => task.status === "进行中" || task.status.startsWith("等待")).length;
+        const width = Math.max(5, Math.round(load / maxLoad * 100));
+        return `
+          <article class="owner-row">
+            <div class="owner-name"><span>${escapeHtml(owner)}</span><span class="count">${group.length} tasks</span></div>
+            <div class="loadbar"><span style="width:${width}%"></span></div>
+            <div class="task-meta">${load} task-days · ${active} active/waiting</div>
+            <div class="dep-list" style="margin-top:8px">
+              ${group.slice(0, 5).map(task => `<div class="dep-item" data-task-id="${escapeHtml(task.id)}"><div class="dep-title">${escapeHtml(task.task)}</div><div class="dep-meta">${escapeHtml(task.status)} · ${escapeHtml(task.start)} → ${escapeHtml(task.end)}</div></div>`).join("")}
+            </div>
+          </article>
+        `;
+      }).join("");
+      document.getElementById("ownersCount").textContent = `${grouped.size} owners`;
+      owners.querySelectorAll(".dep-item").forEach(item => {
+        item.addEventListener("click", () => selectTask(item.dataset.taskId));
+      });
+    }
+
+    function renderDetail() {
+      const task = taskById.get(state.selected) || tasks[0];
+      if (!task) return;
+      state.selected = task.id;
+      document.getElementById("selectedId").textContent = `${task.id} · row ${task.row}`;
+      document.getElementById("detail").innerHTML = `
+        <h2>${escapeHtml(task.task)}</h2>
+        <div><span class="status ${statusClass(task.status)}">${escapeHtml(task.status)}</span></div>
+        <div class="detail-grid">
+          <div class="key">Stage</div><div class="value">${escapeHtml(task.stage)}</div>
+          <div class="key">Owner</div><div class="value">${escapeHtml(task.owner)}</div>
+          <div class="key">Dates</div><div class="value">${escapeHtml(task.start)} → ${escapeHtml(task.end)}</div>
+          <div class="key">Duration</div><div class="value">${escapeHtml(task.durationDays)} days</div>
+        </div>
+        <div class="notes">${escapeHtml(task.notes || "No notes")}</div>
+      `;
+
+      const upstream = task.dependencies.map(id => taskById.get(id)).filter(Boolean);
+      const downstream = successorsOf(task.id);
+      document.getElementById("depCount").textContent = `${upstream.length} up · ${downstream.length} down`;
+      document.getElementById("dependencies").innerHTML = `
+        <div class="dep-section">
+          <div class="key">Upstream</div>
+          <div class="dep-list">${renderDepList(upstream)}</div>
+        </div>
+        <div class="dep-section">
+          <div class="key">Downstream</div>
+          <div class="dep-list">${renderDepList(downstream)}</div>
+        </div>
+      `;
+      document.querySelectorAll("#dependencies .dep-item").forEach(item => {
+        item.addEventListener("click", () => selectTask(item.dataset.taskId));
+      });
+    }
+
+    function renderDepList(items) {
+      if (!items.length) return `<div class="empty">None</div>`;
+      return items.map(task => `
+        <div class="dep-item" data-task-id="${escapeHtml(task.id)}">
+          <div class="dep-title">${escapeHtml(task.task)}</div>
+          <div class="dep-meta">${escapeHtml(task.owner)} · ${escapeHtml(task.status)} · ${escapeHtml(task.start)} → ${escapeHtml(task.end)}</div>
+        </div>
+      `).join("");
+    }
+
+    function selectTask(id) {
+      if (!taskById.has(id)) return;
+      state.selected = id;
+      render();
+    }
+
+    function setView(view) {
+      state.view = view;
+      document.getElementById("timelinePanel").classList.toggle("hidden", view !== "timeline");
+      document.getElementById("boardPanel").classList.toggle("hidden", view !== "board");
+      document.getElementById("ownersPanel").classList.toggle("hidden", view !== "owners");
+      document.getElementById("viewTimeline").classList.toggle("active", view === "timeline");
+      document.getElementById("viewBoard").classList.toggle("active", view === "board");
+      document.getElementById("viewOwners").classList.toggle("active", view === "owners");
+      render();
+    }
+
+    function render() {
+      const rows = filteredTasks();
+      renderMetrics(rows);
+      renderTimeline(rows);
+      renderBoard(rows);
+      renderOwners(rows);
+      if (!rows.some(task => task.id === state.selected) && rows[0]) state.selected = rows[0].id;
+      renderDetail();
+    }
+
+    function init() {
+      document.getElementById("syncLabel").textContent = `Updated ${data.generatedAt}`;
+      document.getElementById("sourceLink").href = data.sourceUrl;
+      const liveLabel = document.getElementById("liveLabel");
+      if (window.location.protocol !== "file:" && window.EventSource) {
+        liveLabel.textContent = "Live sync connecting";
+        const events = new EventSource("/events");
+        let currentRevision = data.revision || null;
+        events.addEventListener("sheet-update", event => {
+          liveLabel.textContent = "Live sync active";
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.revision && currentRevision && payload.revision !== currentRevision) {
+              window.location.reload();
+            }
+            currentRevision = payload.revision || currentRevision;
+          } catch (_err) {
+            liveLabel.textContent = "Live sync parse error";
+          }
+        });
+        events.onerror = () => {
+          liveLabel.textContent = "Live sync reconnecting";
+        };
+      }
+      renderFilters();
+      document.getElementById("searchInput").addEventListener("input", event => {
+        state.search = event.target.value;
+        render();
+      });
+      document.getElementById("stageFilter").addEventListener("change", event => {
+        state.stage = event.target.value;
+        render();
+      });
+      document.getElementById("statusFilter").addEventListener("change", event => {
+        state.status = event.target.value;
+        render();
+      });
+      document.getElementById("ownerFilter").addEventListener("change", event => {
+        state.owner = event.target.value;
+        render();
+      });
+      document.getElementById("resetButton").addEventListener("click", () => {
+        state.search = "";
+        state.stage = "all";
+        state.status = "all";
+        state.owner = "all";
+        document.getElementById("searchInput").value = "";
+        renderFilters();
+        render();
+      });
+      document.getElementById("viewTimeline").addEventListener("click", () => setView("timeline"));
+      document.getElementById("viewBoard").addEventListener("click", () => setView("board"));
+      document.getElementById("viewOwners").addEventListener("click", () => setView("owners"));
+      render();
+    }
+
+    init();
+  </script>
+</body>
+</html>
