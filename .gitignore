@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+
+# Dashboard runtime artifacts
+dashboard/*.log
+dashboard/*.pid
+dashboard/*.tmp
+dashboard/sync-state.json

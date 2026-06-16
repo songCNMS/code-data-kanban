@@ -1,0 +1,15 @@
+{
+  "name": "code-data-dashboard-sync",
+  "spreadsheet_token": "Roissuv9qhKUHfttTXzcwX3QnVd",
+  "sheet_id": "a2a160",
+  "read_range": "A1:V41",
+  "poll_interval_seconds": 30,
+  "on_change": {
+    "detect": "feishu_sheet_revision_changed",
+    "actions": [
+      "regenerate dashboard-data.js from the latest sheet values",
+      "send an SSE sheet-update event to connected browsers",
+      "browser reloads automatically"
+    ]
+  }
+}
