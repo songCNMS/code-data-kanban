@@ -72,17 +72,30 @@
       align-items: center;
     }
 
+    .repo-stats-area {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 12px 22px 0;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
     .repo-stats {
-      border-top: 1px solid var(--line-soft);
-      padding: 12px 22px 14px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 10px;
     }
 
     .repo-stats-head {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-      align-items: end;
-      margin-bottom: 10px;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 8px;
     }
 
     .repo-stats-title {
@@ -103,7 +116,7 @@
     }
 
     .repo-stats-total .value {
-      font-size: 20px;
+      font-size: 18px;
       line-height: 1;
       font-weight: 800;
     }
@@ -116,16 +129,19 @@
 
     .repo-stats-grid {
       display: grid;
-      grid-template-columns: repeat(6, minmax(120px, 1fr));
-      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+      gap: 7px;
+      max-height: 106px;
+      overflow: auto;
+      padding-right: 2px;
     }
 
     .repo-stat {
-      min-height: 68px;
+      min-height: 54px;
       border: 1px solid var(--line-soft);
       border-radius: 7px;
       background: var(--panel-2);
-      padding: 9px 10px;
+      padding: 7px 8px;
       min-width: 0;
     }
 
@@ -138,15 +154,15 @@
     }
 
     .repo-stat .value {
-      margin-top: 6px;
-      font-size: 20px;
+      margin-top: 4px;
+      font-size: 17px;
       line-height: 1;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
     }
 
     .repo-stat .note {
-      margin-top: 6px;
+      margin-top: 4px;
       color: var(--muted);
       font-size: 11px;
       white-space: nowrap;
@@ -458,17 +474,17 @@
       .controls { grid-template-columns: 1fr 1fr; }
       .segmented { grid-column: 1 / -1; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .repo-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .repo-stats-area { grid-template-columns: 1fr; }
       .right { order: -1; }
     }
 
     @media (max-width: 640px) {
-      .topbar, .controls, .repo-stats, main { padding-left: 12px; padding-right: 12px; }
+      .topbar, .controls, .repo-stats-area, main { padding-left: 12px; padding-right: 12px; }
       .controls { grid-template-columns: 1fr; }
       .metrics { grid-template-columns: 1fr; }
       .repo-stats-head { grid-template-columns: 1fr; }
       .repo-stats-total { text-align: left; }
-      .repo-stats-grid { grid-template-columns: 1fr 1fr; }
+      .repo-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 140px; }
     }
   </style>
 </head>
@@ -492,6 +508,9 @@
       <select id="ownerFilter"></select>
       <button id="resetButton" type="button">Reset</button>
     </div>
+  </header>
+
+  <section class="repo-stats-area" aria-label="Repository statistics summaries">
     <section class="repo-stats" id="repoStats" aria-label="Repository collection statistics">
       <div class="repo-stats-head">
         <div>
@@ -520,7 +539,7 @@
       <div class="repo-stats-grid" id="cephfsRepoStatsGrid"></div>
       <div class="repo-stats-error hidden" id="cephfsRepoStatsError"></div>
     </section>
-  </header>
+  </section>
 
   <main>
     <section class="left">

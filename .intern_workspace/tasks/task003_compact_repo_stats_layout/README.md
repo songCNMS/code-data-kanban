@@ -1,4 +1,4 @@
-<!-- METADATA:STATUS=Open,ASSIGNEE= -->
+<!-- METADATA:STATUS=Completed,ASSIGNEE=intern_code_data_debug -->
 
 # task003_compact_repo_stats_layout
 
@@ -16,3 +16,11 @@ Optimize the kanban dashboard repository collection layout so the two repository
 ## Notes
 
 - The issue is primarily layout: the sticky `header` currently wraps both stats sections, causing them to remain pinned and consume screen height.
+
+## PR
+
+- https://github.com/songCNMS/code-data-kanban/pull/4
+
+## Completion
+
+- Completed and approved for merge on 2026-06-16.
